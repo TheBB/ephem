@@ -16,6 +16,7 @@ def time():
     t = datetime.utcnow()
     print('      UTC:', t)
     print('      UT1:', t.ut1)
+    print('      UT2:', t.ut2)
     print('      TAI:', t.tai)
     print('       TT:', t.tt)
     print('  JD(UT1):', t.jd)

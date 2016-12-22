@@ -1,7 +1,7 @@
 from collections import namedtuple
 import datetime as dt
 from functools import lru_cache
-from math import ceil, floor, pi
+from math import ceil, cos, floor, pi, sin
 from numbers import Number
 import requests
 
@@ -72,6 +72,17 @@ class datetime(dt.datetime):
         lo, hi, fr = int(floor(mjd)), int(ceil(mjd)), mjd % 1
         diff = (1 - fr) * diffs[lo] + fr * diffs[hi]
         return self + dt.timedelta(seconds=diff)
+
+    @property
+    def ut2(self):
+        """Smoothed universal time."""
+        bessel = (self.tt.jd - 2415020.31362) / 365.242198781
+        bessel = (bessel % 1) * tau
+        diff = 0.022 * sin(bessel)
+        diff -= 0.012 * cos(bessel)
+        diff -= 0.006 * sin(2 * bessel)
+        diff += 0.007 * cos(2 * bessel)
+        return self.ut1 + dt.timedelta(seconds=diff)
 
     @property
     def tai(self):
