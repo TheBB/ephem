@@ -1,4 +1,5 @@
 import click
+import importlib
 from math import pi
 
 from .time import angle, datetime
@@ -23,6 +24,12 @@ def time():
     print(' MJD(UT1):', t.mjd)
     print('      ERA:', t.era.time)
     print('     GMST:', t.gmst.time)
+
+
+@main.command()
+def gui():
+    gui = importlib.import_module('ephem.gui')
+    gui.run()
 
 
 if __name__ == '__main__':
