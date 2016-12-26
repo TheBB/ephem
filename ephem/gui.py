@@ -1,5 +1,7 @@
+import importlib
 from itertools import chain
 from math import cos, pi, radians, sin, sqrt, tan
+from functools import partial
 import numpy as np
 from vispy import app, gloo, visuals, scene
 from vispy.scene.cameras.perspective import PerspectiveCamera
@@ -22,7 +24,7 @@ class SkyBoxVisual(visuals.Visual):
     }
     """
 
-    def __init__(self, color=(1, 1, 1, 1), res=100, steps=12, radius=1):
+    def __init__(self, color=(1, 1, 1, 1), res=100, steps=12, radius=1, width=2):
         visuals.Visual.__init__(self, self.VERTEX, self.FRAGMENT)
 
         sp_azims = np.linspace(0, 2*pi, 2*steps, endpoint=False)
@@ -51,16 +53,50 @@ class SkyBoxVisual(visuals.Visual):
             for k in range(0, steps-1),
         )
         indices = np.vstack((m_indices, 2*steps*res + p_indices))
-        indices = np.reshape(indices, np.prod(indices.shape))
+        self.full_indices = gloo.IndexBuffer(np.reshape(indices, np.prod(indices.shape)))
+
+        ms = (steps - 1) // 2
+        indices = 2*steps*res + np.array([
+            (a, a+1) for a in range(ms*2*res, (ms+1)*2*res-1)
+        ], dtype=np.uint32)
+        self.sparse_indices = gloo.IndexBuffer(np.reshape(indices, np.prod(indices.shape)))
 
         self.vbo = gloo.VertexBuffer(m_vertices)
         self.shared_program.vert['position'] = self.vbo
-        self.shared_program.frag['color'] = color
         self._draw_mode = 'lines'
-        self._index_buffer = gloo.IndexBuffer(indices)
+
+        self.full = True
+        self.width = float(width)
+        self.set_color(color)
+
+    @property
+    def full(self):
+        return self._index_buffer is self.full_indices
+
+    @full.setter
+    def full(self, value):
+        self._index_buffer = {
+            True: self.full_indices,
+            False: self.sparse_indices,
+        }[value]
+
+    def set_color(self, color):
+        self.shared_program.frag['color'] = color
 
     def _prepare_transforms(self, view):
         view.view_program.vert['transform'] = view.get_transform()
+
+    def _prepare_draw(self, view):
+        gl = None
+        try:
+            gl = importlib.import_module('OpenGL.GL')
+        except Exception:
+            pass
+
+        if gl:
+            gl.glEnable(gl.GL_LINE_SMOOTH)
+            px_scale = self.transforms.pixel_scale
+            gl.glLineWidth(px_scale * self.width)
 
 SkyBox = scene.visuals.create_visual_node(SkyBoxVisual)
 
@@ -186,17 +222,30 @@ class GUI:
         self.canvas = canvas
         self.view = view
 
-        box = SkyBox(parent=view.scene, color=(.2, .2, .2, 1))
+        self.box_local = SkyBox(parent=view.scene)
+        self.box_equatorial = SkyBox(parent=view.scene)
+
+        self.directions = []
         for text, direction in [('N', (0,1,0)), ('E', (1,0,0)),
                                 ('S', (0,-1,0)), ('W', (-1,0,0))]:
-            scene.visuals.Text(
+            self.directions.append(scene.visuals.Text(
                 text, parent=view.scene, color='orange', pos=direction,
                 bold=True, font_size=20,
-            )
+            ))
 
         self.cam_out = OutwardCamera(fov=45, azimuth=0, elevation=0)
         self.cam_in = TurntableCamera(fov=45, distance=3, center=(0,0,0), azimuth=0, elevation=0)
         view.camera = self.cam_out
+
+        self.set_system('local')
+
+        self.handlers = {
+            'C': self.camera_switch,
+            'Q': self.camera_coords,
+            '1': partial(self.set_system, 'local'),
+            '2': partial(self.set_system, 'equatorial'),
+            # '3': partial(self.set_system, 'ecliptic'),
+        }
 
         @canvas.connect
         def on_key_press(event):
@@ -205,19 +254,48 @@ class GUI:
     def on_key_press(self, event):
         if event.handled:
             return
-
-        if event.key.name == 'C':
-            old_cam = self.view.camera
-            new_cam = next(c for c in {self.cam_out, self.cam_in} if old_cam is not c)
-            new_cam.azimuth = old_cam.azimuth
-            new_cam.elevation = old_cam.elevation
-            self.view.camera = new_cam
+        try:
+            self.handlers[event.key.name]()
             event.handled = True
-            self.canvas.update()
+        except KeyError:
+            pass
 
-        elif event.key.name == 'Q':
-            print('{:.2f} {:.2f}'.format(self.view.camera.azimuth, self.view.camera.elevation))
-            event.handled = True
+    def camera_switch(self):
+        old_cam = self.view.camera
+        new_cam = next(c for c in {self.cam_out, self.cam_in} if old_cam is not c)
+        new_cam.azimuth = old_cam.azimuth
+        new_cam.elevation = old_cam.elevation
+        self.view.camera = new_cam
+        self.canvas.update()
+
+    def camera_coords(self):
+        print('{:.2f} {:.2f}'.format(self.view.camera.azimuth, self.view.camera.elevation))
+
+    def set_system(self, system):
+        tr = visuals.transforms.MatrixTransform()
+        if system == 'equatorial':
+            tr.rotate(30, (1, 0, 0))
+        self.box_local.transform = tr
+        self.box_local.full = system == 'local'
+        cl = np.array([.5, .5, .5])
+        if system == 'local':
+            cl *= 0.3
+        self.box_local.set_color(np.hstack((cl, [1])))
+
+        tr = visuals.transforms.MatrixTransform()
+        if system == 'local':
+            tr.rotate(-30, (1, 0, 0))
+        self.box_equatorial.transform = tr
+        self.box_equatorial.full = system == 'equatorial'
+        cl = np.array([.2, .2, .8])
+        if system == 'equatorial':
+            cl *= 0.3
+        self.box_equatorial.set_color(np.hstack((cl, [1])))
+
+        for d in self.directions:
+            d.visible = system == 'local'
+
+        self.canvas.update()
 
 
 def run():
