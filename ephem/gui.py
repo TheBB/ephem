@@ -1,3 +1,4 @@
+from colour import Color
 import importlib
 from itertools import chain
 from math import cos, pi, radians, sin, sqrt, tan
@@ -277,20 +278,20 @@ class GUI:
             tr.rotate(30, (1, 0, 0))
         self.box_local.transform = tr
         self.box_local.full = system == 'local'
-        cl = np.array([.5, .5, .5])
+        cl = Color(hsl=(0, 0, .5))
         if system == 'local':
-            cl *= 0.3
-        self.box_local.set_color(np.hstack((cl, [1])))
+            cl.luminance *= 0.3
+        self.box_local.set_color(tuple((*cl.rgb, 1)))
 
         tr = visuals.transforms.MatrixTransform()
         if system == 'local':
             tr.rotate(-30, (1, 0, 0))
         self.box_equatorial.transform = tr
         self.box_equatorial.full = system == 'equatorial'
-        cl = np.array([.2, .2, .8])
+        cl = Color(hsl=(0.6, 0.63, .5))
         if system == 'equatorial':
-            cl *= 0.3
-        self.box_equatorial.set_color(np.hstack((cl, [1])))
+            cl.luminance *= 0.3
+        self.box_equatorial.set_color(tuple((*cl.rgb, 1)))
 
         for d in self.directions:
             d.visible = system == 'local'

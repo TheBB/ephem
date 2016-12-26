@@ -16,8 +16,9 @@ setup(
     },
     install_requires=[
         'click',
+        'colour',
+        'numpy',
         'requests',
         'vispy',
-        'numpy',
     ],
 )
