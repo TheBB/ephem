@@ -25,7 +25,15 @@ class SkyBoxVisual(visuals.Visual):
     }
     """
 
-    def __init__(self, color=(1, 1, 1, 1), res=100, steps=12, radius=1, width=2):
+    @classmethod
+    def make(cls, transform, *args, **kwargs):
+        obj = cls(*args, **kwargs)
+        if transform:
+            obj.transform = transform
+        return obj
+
+    def __init__(self, color=Color(hsl=(0, 0, .5)), res=100, steps=12,
+                 radius=1, width=2, transform=None):
         visuals.Visual.__init__(self, self.VERTEX, self.FRAGMENT)
 
         sp_azims = np.linspace(0, 2*pi, 2*steps, endpoint=False)
@@ -66,9 +74,9 @@ class SkyBoxVisual(visuals.Visual):
         self.shared_program.vert['position'] = self.vbo
         self._draw_mode = 'lines'
 
-        self.full = True
         self.width = float(width)
-        self.set_color(color)
+        self.base_color = color
+        self.full = True
 
     @property
     def full(self):
@@ -81,8 +89,10 @@ class SkyBoxVisual(visuals.Visual):
             False: self.sparse_indices,
         }[value]
 
-    def set_color(self, color):
-        self.shared_program.frag['color'] = color
+        color = Color(self.base_color)
+        if value:
+            color.luminance *= 0.3
+        self.shared_program.frag['color'] = tuple((*color.rgb, 1))
 
     def _prepare_transforms(self, view):
         view.view_program.vert['transform'] = view.get_transform()
@@ -223,8 +233,17 @@ class GUI:
         self.canvas = canvas
         self.view = view
 
-        self.box_local = SkyBox(parent=view.scene)
-        self.box_equatorial = SkyBox(parent=view.scene)
+        self.trf_local = visuals.transforms.MatrixTransform()
+        self.trf_equatorial = visuals.transforms.MatrixTransform()
+
+        self.box_local = SkyBox.make(
+            parent=view.scene, transform=self.trf_local,
+            color=Color(hsl=(0, 0, .5)),
+        )
+        self.box_equatorial = SkyBox.make(
+            parent=view.scene, transform=self.trf_equatorial,
+            color=Color(hsl=(0.6, 0.63, .5)),
+        )
 
         self.directions = []
         for text, direction in [('N', (0,1,0)), ('E', (1,0,0)),
@@ -273,25 +292,16 @@ class GUI:
         print('{:.2f} {:.2f}'.format(self.view.camera.azimuth, self.view.camera.elevation))
 
     def set_system(self, system):
-        tr = visuals.transforms.MatrixTransform()
-        if system == 'equatorial':
-            tr.rotate(30, (1, 0, 0))
-        self.box_local.transform = tr
-        self.box_local.full = system == 'local'
-        cl = Color(hsl=(0, 0, .5))
-        if system == 'local':
-            cl.luminance *= 0.3
-        self.box_local.set_color(tuple((*cl.rgb, 1)))
+        self.trf_local.reset()
+        self.trf_equatorial.reset()
 
-        tr = visuals.transforms.MatrixTransform()
         if system == 'local':
-            tr.rotate(-30, (1, 0, 0))
-        self.box_equatorial.transform = tr
+            self.trf_equatorial.rotate(-30, (1, 0, 0))
+        else:
+            self.trf_local.rotate(30, (1, 0, 0))
+
+        self.box_local.full = system == 'local'
         self.box_equatorial.full = system == 'equatorial'
-        cl = Color(hsl=(0.6, 0.63, .5))
-        if system == 'equatorial':
-            cl.luminance *= 0.3
-        self.box_equatorial.set_color(tuple((*cl.rgb, 1)))
 
         for d in self.directions:
             d.visible = system == 'local'
